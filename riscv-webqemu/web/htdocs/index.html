@@ -3,6 +3,11 @@
   <head>
     <meta charset="utf-8" />
     <title>QEMU on browser (RISCV64)</title>
+
+    <!-- IMPORTANT: fix scaling on phones -->
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
     <link rel="stylesheet" href="./vendor/xterm.css" />
     <style>
       html, body {
@@ -18,10 +23,9 @@
         font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       }
 
-      /* Wrapper so the terminal shrinks when the keybar is visible */
       #terminal-container {
         flex: 1 1 auto;
-        min-height: 0; /* important for flex children */
+        min-height: 0;
         width: 100vw;
       }
 
@@ -30,20 +34,51 @@
         width: 100%;
       }
 
-      /* Virtual keybar: visible on phones / small screens */
+      /* virtual keybar (keep or remove as you like) */
       #keybar {
-        display: flex;
-        gap: 0.4rem;
-        padding: 0.4rem;
-        box-sizing: border-box;
-        background: #111;
-        border-top: 1px solid #333;
-        align-items: center;
-        justify-content: center;
-        -webkit-user-select: none;
-        user-select: none;
-        touch-action: manipulation;
-      }
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: env(safe-area-inset-bottom, 0px);
+
+  display: flex;
+  flex-wrap: wrap;              /* ✅ allow multiple rows */
+  justify-content: center;
+  align-items: center;
+
+  gap: 0.3rem;                  /* horizontal + vertical gap */
+  padding: 0.35rem 0.4rem;
+  box-sizing: border-box;
+
+  background: #111;
+  border-top: 1px solid #333;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+
+  transition: transform 0.15s ease-out;
+}
+
+    .vk-key {
+      flex: 0 0 auto;               /* keep natural width, but allow wrapping */
+      min-width: 2.3rem;
+      padding: 0.3rem 0.55rem;
+      border-radius: 0.4rem;
+      border: 1px solid #555;
+      background: #222;
+      font-size: 0.9rem;
+      text-align: center;
+      cursor: pointer;
+    }
+
+    .vk-key.vk-wide {
+      min-width: 3.5rem;            /* wider keys still wrap when needed */
+    }
+
+    .vk-key.vk-toggle.active {
+      background: #555;
+      border-color: #aaa;
+    }
 
       .vk-key {
         flex: 0 0 auto;
@@ -70,7 +105,7 @@
         border-color: #aaa;
       }
 
-      /* On wider screens you can hide the keybar if you only want it on phones */
+      /* example: hide keybar on desktop if you want */
       @media (min-width: 768px) {
         #keybar {
           display: none;
@@ -79,12 +114,10 @@
     </style>
   </head>
   <body>
-    <!-- Terminal wrapper so flex can shrink it above the keybar -->
     <div id="terminal-container">
       <div id="terminal"></div>
     </div>
 
-    <!-- Virtual keyboard / keybar -->
     <div id="keybar">
       <button class="vk-key" data-key="UP">↑</button>
       <button class="vk-key" data-key="DOWN">↓</button>
@@ -97,139 +130,197 @@
       <button class="vk-key vk-toggle" id="vk-ctrl" data-key="CTRL">Ctrl</button>
       <button class="vk-key" data-key="C">C</button>
       <button class="vk-key" data-key="D">D</button>
+      <button class="vk-key vk-wide" data-key="]">]</button>
+      <button class="vk-key vk-wide" data-key="NEXT_PANE">Next pane</button>
+      <button class="vk-key vk-wide" data-key="SPLITH">Split H</button>
+      <button class="vk-key vk-wide" data-key="SPLITV">Split V</button>
     </div>
 
     <!-- preload the filesystem bundle (qemu-system-riscv64.data) -->
     <script src="./load.js"></script>
     <script type="module">
-      import 'https://unpkg.com/xterm@5.3.0/lib/xterm.js';
-      import 'https://unpkg.com/xterm-pty/index.js';
-      import './module.js';
-      import initEmscriptenModule from './out.js';
+  import 'https://unpkg.com/xterm@5.3.0/lib/xterm.js';
+  import 'https://unpkg.com/xterm-pty/index.js';
+  import './module.js';
+  import initEmscriptenModule from './out.js';
 
-      const terminalContainer = document.getElementById('terminal-container');
-      const keybar = document.getElementById('keybar');
+  const terminalContainer = document.getElementById('terminal-container');
+  const keybar = document.getElementById('keybar');
 
-      function computeTerminalGeometry() {
-        // Use the container height (which is already reduced by the keybar)
-        const rect = terminalContainer.getBoundingClientRect();
-        // Same rough char metrics you used before
-        const cols = Math.floor(rect.width / 9);
-        const rows = Math.floor(rect.height / 16);
-        return {
-          cols: Math.max(cols, 10),
-          rows: Math.max(rows, 5),
-        };
+  const isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(
+    navigator.userAgent
+  );
+
+  // Slightly bigger cells & font on mobile
+  const CHAR_WIDTH  = isMobile ? 11 : 9;
+  const CHAR_HEIGHT = isMobile ? 22 : 16;
+  const FONT_SIZE   = isMobile ? 20 : 14;
+
+  function computeTerminalGeometry() {
+    const rect = terminalContainer.getBoundingClientRect();
+    const cols = Math.floor(rect.width / CHAR_WIDTH);
+    const rows = Math.floor(rect.height / CHAR_HEIGHT);
+    return {
+      cols: Math.max(cols, 10),
+      rows: Math.max(rows, 5),
+    };
+  }
+
+  const { cols, rows } = computeTerminalGeometry();
+
+  const xterm = new Terminal({
+    cols,
+    rows,
+    fontSize: FONT_SIZE,
+    convertEol: true,
+    theme: {
+      background: '#000000',
+      foreground: '#ffffff',
+    },
+    cursorBlink: true,
+  });
+
+  xterm.open(document.getElementById('terminal'));
+
+  const { master, slave } = openpty();
+  xterm.loadAddon(master);
+
+  // Give the PTY slave to Emscripten/QEMU
+  Module.pty = slave;
+  Module['mainScriptUrlOrBlob'] = location.origin + '/out.js';
+
+  (async () => {
+    const instance = await initEmscriptenModule(Module);
+    const oldPoll = Module['TTY'].stream_ops.poll;
+    const pty = Module['pty'];
+    Module['TTY'].stream_ops.poll = function (stream, timeout) {
+      if (!pty.readable) {
+        return (pty.readable ? 1 : 0) | (pty.writable ? 4 : 0);
       }
+      return oldPoll.call(stream, timeout);
+    };
+  })();
 
-      const { cols, rows } = computeTerminalGeometry();
+  // Recompute cols/rows on rotate / resize
+  window.addEventListener('resize', () => {
+    const size = computeTerminalGeometry();
+    xterm.resize(size.cols, size.rows);
+  });
 
-      const xterm = new Terminal({
-        cols,
-        rows,
-        fontSize: 14,
-        convertEol: true,
-        theme: {
-          background: '#000000',
-          foreground: '#ffffff',
-        },
-        cursorBlink: true,
-      });
+  // ---- virtual keybar -> PTY ----
+  const ctrlBtn = document.getElementById('vk-ctrl');
+  let ctrlLatched = false;
 
-      xterm.open(document.getElementById('terminal'));
+  // IMPORTANT: send data as if the user typed it
+  function sendToPty(data) {
+    // xterm-pty hooks into xterm input, so paste() is fine here
+    xterm.paste(data);
+  }
 
-      // PTY set up
-      const { master, slave } = openpty();
-      xterm.loadAddon(master);
-
-      // Make the PTY available to the Emscripten module
-      Module.pty = slave;
-      Module['mainScriptUrlOrBlob'] = location.origin + '/out.js';
-
-      (async () => {
-        const instance = await initEmscriptenModule(Module);
-
-        // Adjust TTY poll to respect xterm-pty readiness
-        const oldPoll = Module['TTY'].stream_ops.poll;
-        const pty = Module['pty'];
-        Module['TTY'].stream_ops.poll = function (stream, timeout) {
-          if (!pty.readable) {
-            return (pty.readable ? 1 : 0) | (pty.writable ? 4 : 0);
-          }
-          return oldPoll.call(stream, timeout);
-        };
-      })();
-
-      // Resize xterm when the window changes size
-      window.addEventListener('resize', () => {
-        const size = computeTerminalGeometry();
-        xterm.resize(size.cols, size.rows);
-      });
-
-      // ---- Virtual keybar logic ----
-      let ctrlLatched = false;
-      const ctrlBtn = document.getElementById('vk-ctrl');
-
-      function sendToPty(data) {
-        // xterm.paste() sends data as if the user typed it,
-        // so it flows through to the PTY and into QEMU.
-        xterm.paste(data);
+  function sendKey(key) {
+    // Letter keys (support Ctrl+letter)
+    if (key.length === 1 && /[A-Za-z]/.test(key)) {
+      if (ctrlLatched) {
+        const code = key.toUpperCase().charCodeAt(0) - 64; // Ctrl+letter
+        sendToPty(String.fromCharCode(code));
+      } else {
+        sendToPty(key);
       }
+      // NOTE: we DO NOT reset ctrlLatched here, so you can do:
+      //   tap Ctrl once, then tap C/D multiple times
+      return;
+    }
 
-      function sendKey(key) {
-        // Letter keys – support Ctrl+<letter>
-        if (key.length === 1 && /[A-Za-z]/.test(key)) {
-          if (ctrlLatched) {
-            const code = key.toUpperCase().charCodeAt(0) - 64; // Ctrl+letter
-            sendToPty(String.fromCharCode(code));
-            ctrlLatched = false;
-            ctrlBtn.classList.remove('active');
-          } else {
-            sendToPty(key);
-          }
-          return;
+    switch (key) {
+      case 'UP':       sendToPty('\x1b[A'); break;
+      case 'DOWN':     sendToPty('\x1b[B'); break;
+      case 'LEFT':     sendToPty('\x1b[D'); break;
+      case 'RIGHT':    sendToPty('\x1b[C'); break;
+      case 'TAB':      sendToPty('\t');    break;
+      case 'ESC':      sendToPty('\x1b');  break;
+
+      // Raw ']' key: either ']' or Ctrl+]
+      case ']':
+        if (ctrlLatched) {
+          // 0x1d == Ctrl+]
+          sendToPty(String.fromCharCode(0x1d));
+        } else {
+          sendToPty(']');
         }
+        break;
 
-        // Special keys
-        switch (key) {
-          case 'UP':
-            sendToPty('\x1b[A');
-            break;
-          case 'DOWN':
-            sendToPty('\x1b[B');
-            break;
-          case 'LEFT':
-            sendToPty('\x1b[D');
-            break;
-          case 'RIGHT':
-            sendToPty('\x1b[C');
-            break;
-          case 'TAB':
-            sendToPty('\t');
-            break;
-          case 'ESC':
-            sendToPty('\x1b');
-            break;
-          default:
-            break;
-        }
-      }
+      // Explicit pane/split commands (always send control codes)
+      case 'NEXT_PANE': // 0x1d = Ctrl+]
+        sendToPty(String.fromCharCode(0x1d));
+        break;
+      case 'SPLITH':    // 0x1e = Ctrl+^
+        sendToPty(String.fromCharCode(0x1e));
+        break;
+      case 'SPLITV':    // 0x1f = Ctrl+_
+        sendToPty(String.fromCharCode(0x1f));
+        break;
 
-      keybar.addEventListener('click', (e) => {
-        const btn = e.target.closest('.vk-key');
-        if (!btn) return;
+      default:
+        break;
+    }
+  }
 
-        const key = btn.dataset.key;
-        if (!key) return;
+  function handleKeybarPointer(e) {
+    // Keep iOS from moving focus away from the terminal textarea
+    e.preventDefault();
 
-        if (key === 'CTRL') {
-          ctrlLatched = !ctrlLatched;
-          btn.classList.toggle('active', ctrlLatched);
-          return;
-        }
+    const btn = e.target.closest('.vk-key');
+    if (!btn) return;
 
-        sendKey(key);
-      });
-    </script>
+    // Make sure xterm's internal textarea stays focused
+    xterm.focus();
+
+    const key = btn.dataset.key;
+    if (!key) return;
+
+    if (key === 'CTRL') {
+      ctrlLatched = !ctrlLatched;
+      ctrlBtn.classList.toggle('active', ctrlLatched);
+      return;
+    }
+
+    sendKey(key);
+  }
+
+  // Use touchstart (with passive: false) + mousedown instead of click
+  keybar.addEventListener('touchstart', handleKeybarPointer, { passive: false });
+  keybar.addEventListener('mousedown', handleKeybarPointer);
+
+  const termElement = document.getElementById('terminal');
+
+  termElement.addEventListener('touchstart', () => {
+    xterm.focus();
+  }, { passive: true });
+
+  termElement.addEventListener('mousedown', () => {
+    xterm.focus();
+  });
+
+  // ---- Make keybar float above mobile keyboard ----
+  function updateKeybarForKeyboard() {
+    if (!window.visualViewport) return; // older browsers
+
+    const vv = window.visualViewport;
+
+    // How much of the layout viewport is covered at the bottom
+    const coveredBottom = window.innerHeight - vv.height - vv.offsetTop;
+    const offset = Math.max(coveredBottom, 0);
+
+    // Move the keybar up by the amount covered by the keyboard
+    keybar.style.transform = `translateY(-${offset}px)`;
+  }
+
+  // Run once and whenever viewport changes (keyboard open/close, rotate, etc.)
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', updateKeybarForKeyboard);
+    window.visualViewport.addEventListener('scroll', updateKeybarForKeyboard);
+  }
+  updateKeybarForKeyboard();
+</script>
   </body>
 </html>
