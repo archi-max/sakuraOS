@@ -174,7 +174,7 @@ Module['FS_createPath']("/", "pack", true, true);
     }
 
     }
-    loadPackage({"files": [{"filename": "/pack/kernel.elf", "start": 0, "end": 459440}, {"filename": "/pack/ktfs.raw", "start": 459440, "end": 34013872}], "remote_package_size": 34013872});
+    loadPackage({"files": [{"filename": "/pack/kernel.elf", "start": 0, "end": 459600}, {"filename": "/pack/ktfs.raw", "start": 459600, "end": 34014032}], "remote_package_size": 34014032});
 
   })();
 
