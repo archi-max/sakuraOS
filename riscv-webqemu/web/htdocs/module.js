@@ -20,9 +20,9 @@ Module['arguments'] = [
           "-global", "virtio-mmio.force-legacy=false",
 
           // Simple: UART to stdio
-          "-serial", "null",
+          "-serial", "file:/dev/uart2",
           "-serial", "mon:stdio",
-        //   "-serial", "tty",
+          "-serial", "file:/dev/uart1",
         //   "-serial", "null",
 
              '-L', '/pack/',

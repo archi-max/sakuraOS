@@ -1,12 +1,31 @@
 <!doctype html>
 <html>
   <head>
-    <meta charset="utf-8" />
-    <title>QEMU on browser (RISCV64)</title>
+    <head>
+  <title> SakuraOS (RISCV64)</title>
 
-    <!-- IMPORTANT: fix scaling on phones -->
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <!-- IMPORTANT: fix scaling on phones -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover" />
+
+  <!-- NEW: theme color for status bar / PWA frame -->
+  <meta name="theme-color" content="#000000" />
+
+  <meta name="description"
+        content="Run Sakura OS, a custom OS running on RISC-V QEMU virtual machine, directly in your browser with a touch-friendly terminal and virtual keys for mobile." />
+
+
+  <!-- NEW: PWA manifest -->
+  <link rel="manifest" href="/manifest.webmanifest">
+
+  <!-- favicon for regular HTML pages -->
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/sakura.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/sakura.png">
+      <link rel="icon" type="image/png" sizes="32x32" href="/sakura.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/sakura.png"> <!-- browser will downscale -->
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" href="/icons/sakura.png" sizes="192x192">
+  <link rel="apple-touch-icon" href="/icons/sakura.png">
 
     <link rel="stylesheet" href="./vendor/xterm.css" />
     <style>
@@ -111,18 +130,68 @@
           display: none;
         }
       }
+
+      .vk-arrow {
+  position: relative;
+  min-width: 2.3rem;
+  height: 2.3rem;
+}
+
+/* base arrow triangle */
+.vk-arrow::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+/* Up */
+.vk-arrow[data-key="UP"]::before {
+  border-width: 0 8px 10px 8px;
+  border-color: transparent transparent #fff transparent;
+}
+
+/* Down */
+.vk-arrow[data-key="DOWN"]::before {
+  border-width: 10px 8px 0 8px;
+  border-color: #fff transparent transparent transparent;
+}
+
+/* Left */
+.vk-arrow[data-key="LEFT"]::before {
+  border-width: 8px 10px 8px 0;
+  border-color: transparent #fff transparent transparent;
+}
+
+/* Right */
+.vk-arrow[data-key="RIGHT"]::before {
+  border-width: 8px 0 8px 10px;
+  border-color: transparent transparent transparent #fff;
+}
+      
     </style>
+
+    
+<style>
+  #uart-terminals { display: flex; flex-direction: column; gap: 8px; }
+  .uart-terminal { height: 220px; border-top: 1px solid #333; }
+</style>
   </head>
   <body>
     <div id="terminal-container">
       <div id="terminal"></div>
+      <!-- <div id="uart-terminals"></div> -->
     </div>
 
     <div id="keybar">
-      <button class="vk-key" data-key="UP">↑</button>
-      <button class="vk-key" data-key="DOWN">↓</button>
-      <button class="vk-key" data-key="LEFT">←</button>
-      <button class="vk-key" data-key="RIGHT">→</button>
+      <button class="vk-key vk-arrow" data-key="UP"></button>
+      <button class="vk-key vk-arrow" data-key="DOWN"></button>
+      <button class="vk-key vk-arrow" data-key="LEFT"></button>
+      <button class="vk-key vk-arrow" data-key="RIGHT"></button>
 
       <button class="vk-key vk-wide" data-key="TAB">Tab</button>
       <button class="vk-key" data-key="ESC">Esc</button>
@@ -139,8 +208,11 @@
     <!-- preload the filesystem bundle (qemu-system-riscv64.data) -->
     <script src="./load.js"></script>
     <script type="module">
-  import 'https://unpkg.com/xterm@5.3.0/lib/xterm.js';
-  import 'https://unpkg.com/xterm-pty/index.js';
+  // import 'https://unpkg.com/xterm@5.3.0/lib/xterm.js';
+  // import 'https://unpkg.com/xterm-pty/index.js';
+
+  import './vendor/xterm.js';
+  import './vendor/index.js';
   import './module.js';
   import initEmscriptenModule from './out.js';
 
@@ -152,9 +224,9 @@
   );
 
   // Slightly bigger cells & font on mobile
-  const CHAR_WIDTH  = isMobile ? 11 : 9;
-  const CHAR_HEIGHT = isMobile ? 22 : 16;
-  const FONT_SIZE   = isMobile ? 20 : 14;
+  const CHAR_WIDTH  = isMobile ? 10 : 9;
+  const CHAR_HEIGHT = isMobile ? 18 : 16;
+  const FONT_SIZE   = isMobile ? 16 : 14;
 
   function computeTerminalGeometry() {
     const rect = terminalContainer.getBoundingClientRect();
@@ -181,6 +253,16 @@
   });
 
   xterm.open(document.getElementById('terminal'));
+
+  // After xterm.open(...)
+  function resizeTerminal() {
+    const size = computeTerminalGeometry();
+    xterm.resize(size.cols, size.rows);
+    // add uarts...
+  }
+
+  // Only for real window resizes (e.g. rotate device)
+  window.addEventListener('resize', resizeTerminal);
 
   const { master, slave } = openpty();
   xterm.loadAddon(master);
@@ -313,6 +395,10 @@
 
     // Move the keybar up by the amount covered by the keyboard
     keybar.style.transform = `translateY(-${offset}px)`;
+
+    requestAnimationFrame(() => {
+    xterm.scrollToBottom();
+  });
   }
 
   // Run once and whenever viewport changes (keyboard open/close, rotate, etc.)
@@ -321,6 +407,123 @@
     window.visualViewport.addEventListener('scroll', updateKeybarForKeyboard);
   }
   updateKeybarForKeyboard();
+
+// ---------- Multi-UART drop-in (xterm + xterm-pty + Emscripten FS) ----------
+
+// Simple byte queue used to satisfy synchronous FS.read()
+function makeByteQueue() {
+  const q = [];
+  return {
+    pushBytes(bytes) { for (const b of bytes) q.push(b & 0xFF); },
+    popInto(buffer, offset, length) {
+      let n = 0;
+      while (n < length && q.length) buffer[offset + n++] = q.shift();
+      return n;
+    },
+    hasData() { return q.length > 0; }
+  };
+}
+
+// Register an Emscripten character device at /dev/uartN
+function registerUartDevice(Module, path, minor, rxQueue, onTxBytes) {
+  const dev = Module.FS.makedev(64, minor);
+
+  Module.FS.registerDevice(dev, {
+    open: (stream) => { stream.seekable = false; },
+
+    read: (stream, buffer, offset, length) => {
+      // Return 0 if no data; poll() will advertise readability.
+      return rxQueue.popInto(buffer, offset, length);
+    },
+
+    write: (stream, buffer, offset, length) => {
+      const bytes = buffer.slice(offset, offset + length);
+      onTxBytes(bytes); // guest -> JS (terminal)
+      return length;
+    },
+
+    poll: (stream) => {
+      // 1 = readable, 4 = writable
+      return (rxQueue.hasData() ? 1 : 0) | 4;
+    }
+  });
+
+  Module.FS.mkdev(path, dev);
+}
+
+// Create UART terminals + PTYs and expose as /dev/uart1..N
+function setupUarts(Module, {
+  count = 2,
+  baseMinor = 1,          // uart1 => minor 1, uart2 => minor 2 ...
+  parentEl = document.getElementById("uart-terminals"),
+  makeTerm = (i) => new Terminal({ cols, rows: Math.min(rows, 14), fontSize: FONT_SIZE }),
+} = {}) {
+  const uarts = []; // [{ minor, path, term, master, slave, rxQueue }]
+
+  for (let i = 1; i <= count; i++) {
+    const minor = baseMinor + (i - 1);
+    const path = `/dev/uart${i}`;
+
+    // UI container
+    const wrap = document.createElement("div");
+    wrap.className = "uart-terminal";
+    wrap.id = `uart${i}`;
+    if (parentEl) parentEl.appendChild(wrap);
+
+    // Terminal + PTY
+    const term = makeTerm(i);
+    term.open(wrap);
+
+    const { master, slave } = openpty();
+    term.loadAddon(master);
+
+    // RX queue for guest reads (UART input coming from this term)
+    const rxQueue = makeByteQueue();
+
+    // Drain slave -> rxQueue whenever user types into this UART terminal.
+    // (xterm-pty delivers user input to the slave; we buffer it for FS.read)
+    slave.onReadable = async () => {
+      // Some xterm-pty builds yield multiple chunks; keep pulling until empty.
+      while (true) {
+        const data = await slave.read?.(); // may be Uint8Array or string
+        if (!data || (data.length === 0)) break;
+        const bytes = (typeof data === "string") ? new TextEncoder().encode(data) : data;
+        rxQueue.pushBytes(bytes);
+      }
+    };
+
+    // Register /dev/uartN so QEMU can open/read/write it
+    registerUartDevice(Module, path, minor, rxQueue, (bytes) => {
+      // guest TX -> goes to terminal via the PTY slave
+      // (writing to slave flows to master addon -> rendered in xterm)
+      slave.write(bytes);
+    });
+
+    uarts.push({ i, minor, path, term, master, slave, rxQueue });
+  }
+
+  // Handy for building argv later
+  Module.uarts = uarts;
+  return uarts;
+}
+
+// IMPORTANT: don't clobber existing preRun
+Module.preRun = Module.preRun || [];
+Module.preRun.push(() => {
+  // Create 2 extra UARTs (uart1, uart2). Change count as needed.
+  setupUarts(Module, { count: 2 });
+});
+</script>
+
+<script>
+  // PWA
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker
+        .register("/sw.js")
+        .catch(err => console.error("SW registration failed:", err));
+    });
+  }
 </script>
   </body>
 </html>
