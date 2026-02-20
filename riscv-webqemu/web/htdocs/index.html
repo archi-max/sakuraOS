@@ -16,7 +16,7 @@
 
 
   <!-- NEW: PWA manifest -->
-  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="manifest" href="./manifest.webmanifest">
 
   <!-- favicon for regular HTML pages -->
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/sakura.png">
@@ -269,7 +269,7 @@
 
   // Give the PTY slave to Emscripten/QEMU
   Module.pty = slave;
-  Module['mainScriptUrlOrBlob'] = location.origin + '/out.js';
+  Module['mainScriptUrlOrBlob'] = new URL('./out.js', window.location.href).toString();
 
   (async () => {
     const instance = await initEmscriptenModule(Module);
@@ -520,7 +520,7 @@ Module.preRun.push(() => {
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js")
+        .register("./sw.js")
         .catch(err => console.error("SW registration failed:", err));
     });
   }
